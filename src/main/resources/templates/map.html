@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PERIMETERS | Management Hub</title>
+
+  <!-- External Libraries -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+        --primary: #111827;
+        --accent: #3b82f6;
+        --header-h: 80px;
+        --sidebar-w: 380px;
+        --panel-bg: rgba(255, 255, 255, 0.95);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', sans-serif; }
+    body { height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: #f3f4f6; }
+
+    /* --- HEADER --- */
+    header {
+        height: var(--header-h); background: #ffffff; display: flex; align-items: center; justify-content: space-between;
+        padding: 0 40px; z-index: 2000; border-bottom: 2px solid #e5e7eb;
+    }
+    .brand { font-size: 2rem; font-weight: 800; color: var(--primary); text-transform: uppercase; letter-spacing: -0.05em; }
+    .header-btns { display: flex; gap: 15px; }
+    .btn-top { padding: 10px 24px; border-radius: 6px; border: 1px solid #d1d5db; background: white; font-weight: 600; cursor: pointer; color: #374151; transition: 0.2s; }
+    .btn-top:hover { background: #f9fafb; }
+    .btn-admin-active { color: #ef4444; border-color: #fca5a5; }
+
+    /* --- LAYOUT --- */
+    #main-container { flex: 1; position: relative; display: flex; overflow: hidden; }
+    #map-wrapper { flex: 1; position: relative; }
+    .map-layer { position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 10; }
+    .map-layer.active { opacity: 1; pointer-events: all; }
+
+    /* --- SIDEBAR --- */
+    #sidebar {
+        width: var(--sidebar-w); background: white; border-left: 1px solid #e5e7eb; position: absolute; right: 0; top: 0; height: 100%;
+        z-index: 2500; transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column;
+        box-shadow: -10px 0 30px rgba(0,0,0,0.1);
+    }
+    #sidebar.open { transform: translateX(0); }
+    .sidebar-toggle { position: absolute; left: -40px; top: 20px; width: 40px; height: 40px; background: white; border: 1px solid #e5e7eb; border-right: none; border-radius: 8px 0 0 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+
+    .sidebar-content { padding: 24px; flex: 1; overflow-y: auto; }
+
+    /* --- MODE PANELS --- */
+    .mode-panel { background: #fffbeb; border: 1px solid #fde047; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 12px; }
+    .mode-title { font-size: 0.75rem; font-weight: 800; color: #854d0e; text-transform: uppercase; }
+
+    /* Fixed Manual Input Row */
+    .input-row { display: flex; gap: 6px; width: 100%; align-items: stretch; }
+    .input-row input {
+        flex: 1; min-width: 0; padding: 8px; border: 1px solid #d1d5db;
+        border-radius: 6px; font-size: 0.85rem; outline: none;
+    }
+    /* Hide spin buttons for cleaner UI and better fitting */
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; }
+
+    .point-list-mini { max-height: 140px; overflow-y: auto; background: white; border: 1px solid #e5e7eb; border-radius: 6px; }
+    .point-item { padding: 6px 10px; border-bottom: 1px solid #f3f4f6; display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; }
+
+    /* --- LIST CARDS --- */
+    .p-card {
+        background: #f9fafb; border: 1px solid #e5e7eb; border-left-width: 6px; padding: 12px 16px; border-radius: 10px;
+        margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    }
+    .p-name {
+        font-weight: 700; font-size: 0.95rem; flex: 1;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        max-width: 160px;
+    }
+    .p-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .p-btn { width: 32px; height: 32px; border-radius: 6px; border: 1px solid #e5e7eb; background: white; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; transition: 0.2s; color: #64748b; }
+    .p-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* --- SEARCH PANEL --- */
+    .search-panel {
+        position: absolute; top: 20px; left: 20px; width: 320px; background: var(--panel-bg);
+        backdrop-filter: blur(10px); padding: 20px; border-radius: 16px; z-index: 2100;
+        display: flex; flex-direction: column; gap: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    .search-panel input { padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; width: 100%; outline: none; }
+
+    .result-display {
+        font-size: 0.85rem; background: #f9fafb; padding: 12px; border-radius: 8px; text-align: center;
+        font-weight: 600; border: 1px solid #e5e7eb; line-height: 1.4;
+        max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .controls-bar {
+        position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+        background: rgba(17, 24, 39, 0.95); padding: 8px; border-radius: 12px;
+        display: flex; align-items: center; gap: 8px; z-index: 2200;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1);
+    }
+    .ctrl-btn { width: 44px; height: 44px; border: none; background: transparent; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-size: 1.1rem; }
+    .ctrl-btn.active { background: var(--accent); }
+
+    /* BUTTONS */
+    .btn-full { width: 100%; padding: 12px; border-radius: 8px; border: none; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-dark { background: var(--primary); color: white; }
+    .btn-outline { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+    .hidden { display: none !important; }
+
+    .pin-number { background: #ef4444; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; border: 2px solid white; }
+    .pin-number.edit { background: #3b82f6; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); backdrop-filter: blur(4px); z-index: 5000; display: none; align-items: center; justify-content: center; }
+    .modal { background: white; padding: 32px; border-radius: 16px; width: 360px; display: flex; flex-direction: column; gap: 15px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">PERIMETERS</div>
+  <div class="header-btns">
+    <button class="btn-top" onclick="loadPerimeters()">Refresh</button>
+    <button class="btn-top" id="admin-header-btn" onclick="handleAdminHeaderClick()">Manage card</button>
+  </div>
+</header>
+
+<main id="main-container">
+  <div id="map-wrapper">
+    <div class="search-panel">
+      <input type="text" id="address-input" placeholder="Search in Yaoundé..." onkeyup="if(event.key=='Enter') searchAddress()">
+      <div style="display:flex; gap:8px;">
+        <button class="btn-full btn-primary" onclick="searchAddress()">Search</button>
+        <button class="btn-full btn-outline" onclick="getMyLocation()">My Position</button>
+      </div>
+      <div class="result-display" id="result-text">Select a location to check</div>
+    </div>
+
+    <div id="leaflet-map" class="map-layer active"></div>
+    <div id="maplibre-map" class="map-layer"></div>
+
+    <div class="controls-bar">
+      <button class="ctrl-btn" onclick="zoomIn()"><i class="fas fa-plus"></i></button>
+      <button class="ctrl-btn" onclick="zoomOut()"><i class="fas fa-minus"></i></button>
+      <div style="width:1px; height:24px; background:rgba(255,255,255,0.2);"></div>
+      <button class="ctrl-btn" id="toggle-view-btn" onclick="toggleMapMode()"><i class="fas fa-satellite"></i></button>
+
+      <div id="satellite-controls" class="hidden" style="display:flex; align-items:center; gap:8px;">
+        <div style="width:1px; height:24px; background:rgba(255,255,255,0.2);"></div>
+        <button class="ctrl-btn" id="btn-2d" onclick="setDimension(0)">2D</button>
+        <button class="ctrl-btn" id="btn-3d" onclick="setDimension(60)">3D</button>
+      </div>
+    </div>
+  </div>
+
+  <aside id="sidebar">
+    <button class="sidebar-toggle" onclick="toggleSidebar()"><i class="fas fa-chevron-left" id="sidebar-icon"></i></button>
+    <div class="sidebar-content">
+
+      <div id="list-controls-ui">
+        <button class="btn-full btn-dark hidden" id="create-init-btn" onclick="enterCreateMode()">
+          <i class="fas fa-plus-circle"></i> Create Perimeter
+        </button>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding: 20px 0;">
+          <span style="font-weight:600; font-size:0.9rem;">Show Perimeters</span>
+          <input type="checkbox" id="visibility-toggle" checked onchange="toggleVisibility()">
+        </div>
+      </div>
+
+      <!-- Create Mode Panel -->
+      <div id="create-panel" class="mode-panel hidden">
+        <div class="mode-title">New Perimeter</div>
+        <input type="text" id="new-p-name" placeholder="Zone Name" style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:8px; outline:none;">
+
+        <!-- Fixed Input Row -->
+        <div class="input-row">
+          <input type="number" id="manual-lat" placeholder="Lat" step="0.000001">
+          <input type="number" id="manual-lng" placeholder="Lng" step="0.000001">
+          <button class="btn-primary" style="padding:0 15px; border-radius:6px; flex-shrink:0;" onclick="addManualPoint()">+</button>
+        </div>
+
+        <div class="point-list-mini" id="c-point-list"></div>
+        <button class="btn-full btn-primary" style="background:#10b981;" onclick="submitCreate()">Save Perimeter</button>
+        <button class="btn-full btn-outline" onclick="exitMode()">Cancel</button>
+      </div>
+
+      <!-- Update Mode Panel -->
+      <div id="update-panel" class="mode-panel hidden">
+        <div class="mode-title">Update Perimeter</div>
+        <input type="text" id="edit-p-name" placeholder="Name" style="width:100%; padding:10px; border:1px solid #d1d5db; border-radius:8px; outline:none;">
+        <p style="font-size: 0.7rem; color: #666; font-style: italic;">Drag blue markers on map to reshape.</p>
+        <button class="btn-full btn-primary" style="background:#10b981;" onclick="submitUpdate()">Save Changes</button>
+        <button class="btn-full btn-outline" onclick="exitMode()">Cancel</button>
+      </div>
+
+      <div class="perimeter-list" id="p-list"></div>
+    </div>
+  </aside>
+</main>
+
+<!-- Admin Login -->
+<div class="modal-overlay" id="login-modal">
+  <div class="modal">
+    <h2>Admin Login</h2>
+    <input type="password" id="admin-pass" placeholder="Enter PIN (e.g. 1234)" style="padding:12px; border:1px solid #ddd; border-radius:8px;">
+    <div style="display:flex; gap:10px;">
+      <button class="btn-full btn-outline" onclick="closeLoginModal()">Cancel</button>
+      <button class="btn-full btn-primary" onclick="verifyAdmin()">Login</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+
+<script>
+  let perimeters = [];
+  let isAdmin = false, isCreating = false, isUpdating = false, isSyncing = false, pVis = true, isSat = false;
+  let cPoints = [], ePoints = [], eId = null;
+  let pLayersL = {}, pMarkersL = [], tempPolyL = null;
+
+  // --- MAPS INIT ---
+  const mapL = L.map('leaflet-map', { zoomControl: false }).setView([3.848, 11.502], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(mapL);
+  const markerL = L.marker([3.848, 11.502]).addTo(mapL);
+
+  const mapS = new maplibregl.Map({
+      container: 'maplibre-map',
+      style: {
+          version: 8,
+          sources: {
+              'sat': { 'type': 'raster', 'tiles': ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], 'tileSize': 256 },
+              'labels': { 'type': 'raster', 'tiles': ['https://basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png'], 'tileSize': 256 }
+          },
+          layers: [{ 'id': 'sat', 'type': 'raster', 'source': 'sat' }, { 'id': 'labels', 'type': 'raster', 'source': 'labels' }]
+      },
+      center: [11.502, 3.848], zoom: 13
+  });
+  const markerS = new maplibregl.Marker(createDot()).setLngLat([11.502, 3.848]).addTo(mapS);
+  function createDot() { const el = document.createElement('div'); el.innerHTML = '<i class="fas fa-map-marker-alt" style="color:#ef4444; font-size: 2.2rem; text-shadow:0 2px 4px rgba(0,0,0,0.3)"></i>'; return el; }
+
+  // --- BACKEND API ---
+  async function loadPerimeters() {
+      try {
+          const res = await fetch('/api/perimeters');
+          perimeters = await res.json();
+          render();
+      } catch(e) { console.error("Load failed", e); }
+  }
+
+  async function verifyAdmin() {
+      const password = document.getElementById('admin-pass').value;
+      const res = await fetch('/api/admin/verify', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({password}) });
+      const data = await res.json();
+      if(data.valid) { isAdmin = true; closeLoginModal(); refreshAuth(); } else alert("PIN Incorrect");
+  }
+
+  async function submitCreate() {
+      const name = document.getElementById('new-p-name').value;
+      if(!name || cPoints.length < 3) return alert("Missing name or 3+ points");
+      const body = { name, points: cPoints.map((p,i) => ({latitude:p[0], longitude:p[1], orderIndex:i})) };
+      const res = await fetch('/api/perimeters', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      if(res.ok) { exitMode(); loadPerimeters(); }
+  }
+
+  async function submitUpdate() {
+      const name = document.getElementById('edit-p-name').value;
+      if(!name || ePoints.length < 3) return alert("3+ points required");
+      const body = { name, points: ePoints.map((p,i) => ({latitude:p[0], longitude:p[1], orderIndex:i})) };
+      const res = await fetch(`/api/perimeters/${eId}`, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      if(res.ok) { exitMode(); loadPerimeters(); }
+  }
+
+  async function deleteP(id) {
+      if(!confirm("Delete this perimeter permanently?")) return;
+      const res = await fetch(`/api/perimeters/${id}`, { method: 'DELETE' });
+      if(res.ok) loadPerimeters();
+  }
+
+  async function moveLoc(la, ln) {
+      markerL.setLatLng([la, ln]); markerS.setLngLat([ln, la]);
+      try {
+          const res = await fetch(`/api/locate?latitude=${la}&longitude=${ln}`);
+          const data = await res.json();
+          const display = document.getElementById('result-text');
+          if(data.perimeter) {
+              display.innerText = `In: ${data.perimeter}`;
+              display.style.color = "#2563eb";
+          } else {
+              display.innerText = "Outside all zones";
+              display.style.color = "#374151";
+          }
+      } catch(e) {}
+  }
+
+  // --- UI RENDERING ---
+  function render() {
+      const list = document.getElementById('p-list'); list.innerHTML = '';
+      Object.values(pLayersL).forEach(l => mapL.removeLayer(l));
+      perimeters.forEach(p => {
+          if(mapS.getLayer('l-'+p.id)) mapS.removeLayer('l-'+p.id);
+          if(mapS.getSource('s-'+p.id)) mapS.removeSource('s-'+p.id);
+
+          const card = document.createElement('div'); card.className = 'p-card'; card.style.borderColor = p.color;
+          card.innerHTML = `<span class="p-name" style="color:${p.color}">${p.name}</span>
+              <div class="p-actions">
+                  <button class="p-btn" title="Focus" onclick="focusP(${p.id})"><i class="fas fa-crosshairs"></i></button>
+                  ${isAdmin ? `<button class="p-btn" title="Edit" onclick="enterEditMode(${p.id})"><i class="fas fa-edit"></i></button>
+                  <button class="p-btn del" title="Delete" onclick="deleteP(${p.id})"><i class="fas fa-trash-alt"></i></button>` : ''}
+              </div>`;
+          list.appendChild(card);
+
+          const pts = p.points.map(pt => [pt.latitude, pt.longitude]);
+          const poly = L.polygon(pts, { color: p.color, fillOpacity: 0.3, weight: 2 });
+          pLayersL[p.id] = poly; if(pVis) poly.addTo(mapL);
+
+          mapS.addSource('s-'+p.id, { 'type':'geojson', 'data':{'type':'Feature', 'geometry':{'type':'Polygon', 'coordinates':[pts.map(c=>[c[1],c[0]])]}} });
+          mapS.addLayer({ 'id':'l-'+p.id, 'type':'fill', 'source':'s-'+p.id, 'layout':{'visibility': pVis?'visible':'none'}, 'paint':{'fill-color':p.color, 'fill-opacity':0.3} }, 'labels');
+      });
+  }
+
+  // --- MANAGEMENT MODES ---
+  function enterCreateMode() { exitMode(); isCreating = true; document.getElementById('create-panel').classList.remove('hidden'); mapL.dragging.disable(); }
+
+  function enterEditMode(id) {
+      exitMode(); eId = id; isUpdating = true;
+      const p = perimeters.find(x => x.id === id);
+      ePoints = p.points.map(pt => [pt.latitude, pt.longitude]);
+      document.getElementById('update-panel').classList.remove('hidden');
+      document.getElementById('edit-p-name').value = p.name;
+      focusP(id);
+
+      ePoints.forEach((pt, i) => {
+          const m = L.marker(pt, { draggable:true, icon: L.divIcon({className:'pin-number edit', html:i+1}) }).addTo(mapL);
+          m.on('drag', e => { ePoints[i] = [e.target.getLatLng().lat, e.target.getLatLng().lng]; refreshEditPoly(); });
+          pMarkersL.push(m);
+      });
+      refreshEditPoly();
+  }
+
+  function refreshEditPoly() {
+      if(tempPolyL) mapL.removeLayer(tempPolyL);
+      tempPolyL = L.polygon(ePoints, { color:'blue', dashArray:'5,5', weight:2 }).addTo(mapL);
+  }
+
+  function exitMode() {
+      isCreating = isUpdating = false; cPoints = []; ePoints = [];
+      document.getElementById('create-panel').classList.add('hidden');
+      document.getElementById('update-panel').classList.add('hidden');
+      document.getElementById('c-point-list').innerHTML = '';
+      pMarkersL.forEach(m => mapL.removeLayer(m)); pMarkersL = [];
+      if(tempPolyL) mapL.removeLayer(tempPolyL); tempPolyL = null;
+      mapL.dragging.enable(); render();
+  }
+
+  function addManualPoint() {
+      const la = parseFloat(document.getElementById('manual-lat').value);
+      const lo = parseFloat(document.getElementById('manual-lng').value);
+      if(!isNaN(la) && !isNaN(lo)) mapClick(la, lo);
+  }
+
+  function mapClick(la, lo) {
+      if(isCreating) {
+          cPoints.push([la, lo]);
+          const m = L.marker([la, lo], { icon: L.divIcon({className:'pin-number', html: cPoints.length}) }).addTo(mapL);
+          pMarkersL.push(m);
+          if(tempPolyL) mapL.removeLayer(tempPolyL);
+          tempPolyL = L.polyline(cPoints, {color:'red', weight:2}).addTo(mapL);
+          const r = document.createElement('div'); r.className='point-item';
+          r.innerHTML=`<span>Point #${cPoints.length}</span><span style="color:#666;">[${la.toFixed(4)}, ${lo.toFixed(4)}]</span>`;
+          document.getElementById('c-point-list').appendChild(r);
+      } else if(!isUpdating) {
+          moveLoc(la, lo);
+      }
+  }
+
+  // --- NAVIGATION & UI HELPERS ---
+  function handleAdminHeaderClick() { isAdmin ? (isAdmin=false, refreshAuth()) : (document.getElementById('login-modal').style.display='flex'); }
+  function closeLoginModal() { document.getElementById('login-modal').style.display='none'; document.getElementById('admin-pass').value = ''; }
+  function refreshAuth() {
+      const b = document.getElementById('admin-header-btn'); b.innerText = isAdmin ? "Admin logout" : "Manage card";
+      b.classList.toggle('btn-admin-active', isAdmin);
+      document.getElementById('create-init-btn').classList.toggle('hidden', !isAdmin); render();
+  }
+
+  function zoomIn() { isSat ? mapS.setZoom(mapS.getZoom()+1) : mapL.zoomIn(); }
+  function zoomOut() { isSat ? mapS.setZoom(mapS.getZoom()-1) : mapL.zoomOut(); }
+
+  function toggleMapMode() {
+      isSat = !isSat;
+      document.getElementById('leaflet-map').classList.toggle('active', !isSat);
+      document.getElementById('maplibre-map').classList.toggle('active', isSat);
+      document.getElementById('satellite-controls').classList.toggle('hidden', !isSat);
+      document.getElementById('toggle-view-btn').classList.toggle('active', isSat);
+      isSat ? mapS.resize() : mapL.invalidateSize();
+  }
+
+  function setDimension(p) {
+      mapS.easeTo({ pitch: p });
+      document.getElementById('btn-2d').classList.toggle('active', p === 0);
+      document.getElementById('btn-3d').classList.toggle('active', p > 0);
+  }
+
+  async function searchAddress() {
+      const q = document.getElementById('address-input').value; if(!q) return;
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q+', Yaoundé')}`);
+      const data = await res.json();
+      if(data[0]) { const la=parseFloat(data[0].lat), lo=parseFloat(data[0].lon); mapL.setView([la, lo], 15); mapClick(la, lo); }
+  }
+
+  function getMyLocation() { navigator.geolocation.getCurrentPosition(p => { mapL.setView([p.coords.latitude, p.coords.longitude], 16); mapClick(p.coords.latitude, p.coords.longitude); }); }
+  function toggleVisibility() { pVis = document.getElementById('visibility-toggle').checked; render(); }
+  function focusP(id) { mapL.fitBounds(pLayersL[id].getBounds(), {padding:[50,50]}); }
+  function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); document.getElementById('sidebar-icon').className = document.getElementById('sidebar').classList.contains('open')?'fas fa-chevron-right':'fas fa-chevron-left'; }
+
+  // --- MAP SYNC ---
+  mapL.on('move', () => { if(!isSyncing){ isSyncing=true; const c=mapL.getCenter(); mapS.jumpTo({center:[c.lng, c.lat], zoom:mapL.getZoom()-1}); isSyncing=false; }});
+  mapS.on('move', () => { if(!isSyncing){ isSyncing=true; const c=mapS.getCenter(); mapL.setView([c.lat, c.lng], mapS.getZoom()+1, {animate:false}); isSyncing=false; }});
+  mapL.on('click', e => mapClick(e.latlng.lat, e.latlng.lng));
+  mapS.on('click', e => mapClick(e.lngLat.lat, e.lngLat.lng));
+
+  mapS.on('load', loadPerimeters);
+</script>
+</body>
+</html>
